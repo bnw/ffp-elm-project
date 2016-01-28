@@ -24,7 +24,7 @@ monsterHeight : MonsterSize -> Float
 monsterHeight height = case height of 
     Medium -> 30
     Small -> 15
-    Dead -> 5
+    Dead -> 0
 
 
 playerColor = rgb 255 255 255
@@ -33,7 +33,7 @@ backgroundColor = rgb 0 0 0
 
 monsterColor size = 
     case size of 
-        Dead -> rgb 0 255 0
+        Dead -> rgb 200 0 0
         _ -> rgb 255 0 0
 
 drawBackground : Form
