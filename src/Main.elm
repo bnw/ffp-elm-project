@@ -157,7 +157,7 @@ monsterSpeed size = case size of
     Dead -> 0
 
 playerObstacles : Model -> List Rectangle
-playerObstacles {monsters} = earth ++ (List.map monsterRectangle monsters)
+playerObstacles {monsters} = earth ++ (List.map monsterRectangle (List.filter (\monster -> monster.size /= Dead) monsters))
 
 monsterObstacles : Model -> List Rectangle
 monsterObstacles model = earth
