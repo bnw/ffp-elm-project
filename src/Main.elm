@@ -105,15 +105,14 @@ getBumps additionalObstacles movingObject = List.foldl (\rectangle -> \previousB
                 Just b -> ((b, rectangle) :: previousBumps)
             ) [] (earth ++ additionalObstacles)
 
-updateMonster : Monster -> Monster
-updateMonster monster = 
+applyToMonsters : (Monster -> Monster) -> Model -> Model
+applyToMonsters f ({monsters} as model) = {model | monsters = List.map f monsters}  
+
+applyMonsterBumps : Monster -> Monster
+applyMonsterBumps monster = 
     let
-        monsterAfterGravity = applyGravity monster
-        bumps = getBumps [] ((monsterRectangle monsterAfterGravity), monsterAfterGravity.velocity)
-        
-        movedMonster = applyVelocity monsterAfterGravity
-        correctedMovedMonster = List.foldl (executeBump (monsterHeight monster.size) monsterWidth) movedMonster bumps
-    in correctedMovedMonster
+        bumps = getBumps [] ((monsterRectangle monster), monster.velocity)
+    in List.foldl (executeBump (monsterHeight monster.size) monsterWidth) monster bumps
 
 applyMonsterMinimumVelocity : Monster -> Monster
 applyMonsterMinimumVelocity monster = 
@@ -157,51 +156,57 @@ monsterSpeed size = case size of
     Small -> 5.5
     Dead -> 0
 
+playerObstacles : Model -> List Rectangle
+playerObstacles {monsters} = earth ++ (List.map monsterRectangle monsters)
+
+monsterObstacles : Model -> List Rectangle
+monsterObstacles model = earth
+
+applyBumps: List Rectangle -> (Entity a -> Rectangle) -> ((Bump, Rectangle) -> Entity a -> Entity a) -> Entity a -> Entity a
+applyBumps rectangles getEntityRectangle executeBump ({velocity} as entity) = 
+    let
+        bumps = getBumps rectangles (getEntityRectangle entity, velocity)
+    in List.foldl executeBump entity bumps
+
+applyPlayerHitsMonster : Model -> Model
+applyPlayerHitsMonster ({monsters, player} as model) = 
+    let 
+        newMonsters = List.map (applyMonsterHit player) monsters
+        newPlayer = 
+            if playerHitsMonsters monsters player then
+                {player | velocity = {x=player.velocity.x, y=6}}
+            else player
+    in {model | player = newPlayer, monsters = newMonsters}
+
 updateModel : IntVector -> Model -> Model
 updateModel keyboard oldModel = 
     let 
-        ----MONSTERS----
-        newMonsters = List.map (updateMonster>>applyMonsterMinimumVelocity) oldModel.monsters
     
-        monsterRectangles = List.map monsterRectangle newMonsters
-    
-    
-        ----PLAYER----
-        --phase 1: apply user input 
-        mutators = [applyToPlayer applyGravity
+        mutators = [
+                    applyToMonsters applyGravity
+                   ,applyToMonsters applyMonsterBumps
+                   ,applyToMonsters applyMonsterMinimumVelocity
+                   ,applyToMonsters applyVelocity
+                   ,applyToPlayer applyGravity
                    ,applyToPlayer applyFriction
                    ,applyToPlayer (applyUserInput keyboard)
-                   ,applyToPlayer applyMaximumVelocity]
+                   ,applyToPlayer applyMaximumVelocity
+                   ,(\model -> applyToPlayer (applyBumps (playerObstacles model) playerRectangle executePlayerBump) model)
+                   ,applyToPlayer applyVelocity
+                   ,applyPlayerHitsMonster
+                   ]
         
-        newModel1 : Model
-        newModel1 = List.foldl ( \mutator -> \model -> mutator model) oldModel mutators
-        --playerAfterGravity = applyFriction (applyGravity oldModel.player) 
-        --playerAfterUserInput = applyMaximumVelocity (applyUserInput playerAfterGravity keyboard)
-        playerAfterUserInput = newModel1.player
-        
-        --phase 2: 
-        bumps : List (Bump, Rectangle)
-        bumps = getBumps monsterRectangles ((playerRectangle playerAfterUserInput), playerAfterUserInput.velocity)
-        
-        movedPlayer = applyVelocity playerAfterUserInput
-        
-        --correct position and velocity based on bumps
-        correctedMovedPlayer = List.foldl executePlayerBump movedPlayer bumps
-        
-        playerAfterMonsterHit = if playerHitsMonsters newMonsters correctedMovedPlayer then
-                                    {correctedMovedPlayer | velocity = {x=correctedMovedPlayer.velocity.x, y=6}}
-                                else correctedMovedPlayer
-        
-        hitMonsters = List.map (applyMonsterHit player) newMonsters 
+        newModel : Model
+        newModel = List.foldl ( \mutator -> \model -> mutator model) oldModel mutators
+                
         
         --debug
-        player = correctedMovedPlayer
+        player = newModel.player
         d1=Debug.watch "player.velocity " (player.velocity.x, player.velocity.y)
         d2=Debug.watch "player.position " (player.position.x, player.position.y)
         d3=Debug.watch "intersect" (List.map (\r->intersect r (playerRectangle player)) earth)
-        d4=Debug.watch "bumps" bumps
     in
-        {oldModel | player = playerAfterMonsterHit, monsters = hitMonsters}
+        newModel
 
 main : Signal Element
 main = Signal.map view (Signal.foldp updateModel initialModel masterSignal)
