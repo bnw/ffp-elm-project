@@ -5,16 +5,17 @@ import Graphics.Element exposing (..)
 import Constants exposing (..)
 import Rectangle exposing (..)
 import Color exposing (..)
+import Time exposing (..)
 
 --todo move
 import Vector exposing (..)
 type alias Position = Vector 
 type alias Entity a = {a | position: Position, velocity: Vector}
-type alias Player = Entity {}
+type alias Player = Entity {lastTickNotJumping : Int}
 type alias Obstacle = Rectangle
 type alias Monster = Entity {size: MonsterSize, direction: MonsterDirection} 
 type alias Monsters = List Monster
-type alias Model = {player:Player, monsters: Monsters}
+type alias Model = {player:Player, monsters: Monsters, tick: Int}
 type MonsterSize = Medium | Small | Dead
 type MonsterDirection = L | R
 

@@ -8,7 +8,7 @@ import Vector exposing (..)
 import Constants exposing (..)
 import Art exposing (..)
 
-type alias ModelMutator = Model -> Model
+type alias MasterSignalType = (Time, IntVector)
 
 earth : List Rectangle
 earth = [createTile -12 -10 12 -9
@@ -33,8 +33,8 @@ applyVelocity old = {old| position = (old.position `addVectors` old.velocity)}
 moveForm : Entity a -> Form -> Form
 moveForm {position} form = move (position.x, position.y) form
 
-masterSignal : Signal IntVector
-masterSignal = Signal.sampleOn (fps 50) Keyboard.arrows
+masterSignal : Signal MasterSignalType
+masterSignal = Time.timestamp (Signal.sampleOn (fps 50) Keyboard.arrows)
 
 view : Model -> Element
 view {player, monsters} = 
@@ -44,7 +44,7 @@ view {player, monsters} =
     in collage windowWidth windowHeight forms
 
 createPlayer : Float -> Float -> Float -> Float -> Player
-createPlayer x y deltaX deltaY = {position = {x = x, y=y}, velocity = { x= deltaX, y= deltaY}}
+createPlayer x y deltaX deltaY = {position = {x = x, y=y}, velocity = { x= deltaX, y= deltaY}, lastTickNotJumping = 0}
 
 createMonster : Float -> Float -> Float -> Float -> Monster
 createMonster x y deltaX deltaY = 
@@ -55,13 +55,19 @@ createMonster x y deltaX deltaY =
 
 initialModel : Model
 initialModel = {
+    tick = 0,
     player = (createPlayer 0 0 0 0 ),
     monsters = [createMonster 50 50 0 3
                ,createMonster 150 50 0 3]
     }
 
-executePlayerBump : (Bump, Rectangle) -> Entity a -> Entity a
-executePlayerBump = executeBump playerHeight playerWidth
+executePlayerBump : Int -> (Bump, Rectangle) -> Player -> Player
+executePlayerBump currentTick (bump,rectangle) player = 
+    let 
+        newPlayer = if bump == Down 
+                    then {player |lastTickNotJumping = currentTick}
+                    else player
+    in executeBump playerHeight playerWidth (bump,rectangle) newPlayer
 
 executeBump : Float -> Float -> (Bump, Rectangle) -> Entity a -> Entity a
 executeBump entityHeight entityWidth (bump, rectangle) entity  = 
@@ -86,16 +92,22 @@ applyToPlayer : (Player -> Player) -> Model -> Model
 applyToPlayer f ({player} as model) = {model | player = f player}
 
 applyGravity : Entity a -> Entity a
-applyGravity old = changeVelocity old {y=-0.5, x=0}
+applyGravity old = changeVelocity old {y=-0.6, x=0}
 
-applyUserInput : IntVector -> Entity a -> Entity a
-applyUserInput keyboard entity  = changeVelocity entity (toVector keyboard)
+applyUserInput : IntVector -> Int -> Player -> Player
+applyUserInput keyboard tick ({lastTickNotJumping, velocity} as player)  = 
+    let 
+        keyboardVector = toVector keyboard
+        x = keyboardVector.x * 1.5
+        y = if keyboardVector.y <= 0 then keyboardVector.y
+            else max 0 ((6 - 20 * ((toFloat tick) - (toFloat lastTickNotJumping)) / 30)^0.5)
+    in changeVelocity player {x = x, y = y}
 
 applyMaximumVelocity : Entity a -> Entity a
 applyMaximumVelocity old = 
     let 
         x = if old.velocity.x >= 0 then min old.velocity.x 6 else max old.velocity.x -6
-        y = if old.velocity.y >= 0 then min old.velocity.y 4.5 else max old.velocity.y -8
+        y = if old.velocity.y >= 0 then min old.velocity.y 100 else max old.velocity.y -10
     in {old | velocity = {x=x, y=y}}
 
 getBumps : List Rectangle -> (Rectangle, Vector) -> List (Bump, Rectangle)
@@ -174,14 +186,14 @@ applyPlayerHitsMonster ({monsters, player} as model) =
         newMonsters = List.map (applyMonsterHit player) monsters
         newPlayer = 
             if playerHitsMonsters monsters player then
-                {player | velocity = {x=player.velocity.x, y=6}}
+                {player | velocity = {x=player.velocity.x, y=2}}
             else player
     in {model | player = newPlayer, monsters = newMonsters}
 
-updateModel : IntVector -> Model -> Model
-updateModel keyboard oldModel = 
+updateModel : MasterSignalType -> Model -> Model
+updateModel (time, keyboard) oldModel = 
     let 
-    
+        currentTick = oldModel.tick + 1
         mutators = [
                     applyToMonsters applyGravity
                    ,applyToMonsters applyMonsterBumps
@@ -189,9 +201,9 @@ updateModel keyboard oldModel =
                    ,applyToMonsters applyVelocity
                    ,applyToPlayer applyGravity
                    ,applyToPlayer applyFriction
-                   ,applyToPlayer (applyUserInput keyboard)
+                   ,applyToPlayer (applyUserInput keyboard currentTick)
                    ,applyToPlayer applyMaximumVelocity
-                   ,(\model -> applyToPlayer (applyBumps (playerObstacles model) playerRectangle executePlayerBump) model)
+                   ,(\model -> applyToPlayer (applyBumps (playerObstacles model) playerRectangle (executePlayerBump currentTick)) model)
                    ,applyToPlayer applyVelocity
                    ,applyPlayerHitsMonster
                    ]
@@ -204,9 +216,10 @@ updateModel keyboard oldModel =
         player = newModel.player
         d1=Debug.watch "player.velocity " (player.velocity.x, player.velocity.y)
         d2=Debug.watch "player.position " (player.position.x, player.position.y)
+        d5=Debug.watch "player.lastTickNotJumping " (player.lastTickNotJumping)
         d3=Debug.watch "intersect" (List.map (\r->intersect r (playerRectangle player)) earth)
     in
-        newModel
+        {newModel | tick = currentTick}
 
 main : Signal Element
 main = Signal.map view (Signal.foldp updateModel initialModel masterSignal)
