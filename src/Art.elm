@@ -6,18 +6,8 @@ import Constants exposing (..)
 import Rectangle exposing (..)
 import Color exposing (..)
 import Time exposing (..)
-
---todo move
-import Vector exposing (..)
-type alias Position = Vector 
-type alias Entity a = {a | position: Position, velocity: Vector}
-type alias Player = Entity {lastTickNotJumping : Int}
-type alias Obstacle = Rectangle
-type alias Monster = Entity {size: MonsterSize, direction: MonsterDirection} 
-type alias Monsters = List Monster
-type alias Model = {player:Player, monsters: Monsters, tick: Int}
-type MonsterSize = Medium | Small | Dead
-type MonsterDirection = L | R
+import TypeDefs exposing (..)
+import Text 
 
 monsterWidth = 30
 
@@ -28,7 +18,8 @@ monsterHeight height = case height of
     Dead -> 0
 
 
-playerColor = rgb 255 255 255
+textColor = rgb 255 255 255
+playerColor = rgb 210 210 210
 obstacleColor = playerColor
 backgroundColor = rgb 0 0 0
 
@@ -41,7 +32,7 @@ drawBackground : Form
 drawBackground = filled backgroundColor (rect windowWidth windowHeight)
 
 drawPlayer : Form
-drawPlayer = move (playerWidth / 2,playerHeight / 2) (outlined (solid playerColor) (rect playerWidth playerHeight))
+drawPlayer = move (playerWidth / 2,playerHeight / 2) (filled playerColor (rect playerWidth playerHeight))
 
 drawMonster : Monster -> Form
 drawMonster {size} = move (monsterWidth / 2, (monsterHeight size) / 2) (outlined (solid (monsterColor size)) (rect monsterWidth (monsterHeight size)))
@@ -51,3 +42,12 @@ drawObstacle {minX , minY, maxX, maxY} =
     let
         solidBlack = solid obstacleColor
     in traced ({solidBlack| join = Sharp 0}) (path [(minX,minY), (maxX,minY), (maxX, maxY), (minX, maxY), (minX,minY)])
+    
+drawGameOver : State -> List Form
+drawGameOver state =
+    case state of
+        GameOver -> [text (Text.color textColor (Text.fromString "GAME OVER!"))]
+        Splash ->  [move (0, 150) (text (Text.color textColor (Text.fromString "Move with arrows.")))
+                   ,move (0, 120) (text (Text.color textColor (Text.fromString "Objective: Stop all the red squares! Jump on them to stop them.")))
+                   ,move (0, 90) (text (Text.color textColor (Text.fromString "Start the game by pressing any arrow key.")))]
+        _ -> []

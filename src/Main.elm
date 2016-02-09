@@ -7,6 +7,7 @@ import Rectangle exposing (..)
 import Vector exposing (..)
 import Constants exposing (..)
 import Art exposing (..)
+import TypeDefs exposing (..)
 
 type alias MasterSignalType = (Time, IntVector)
 
@@ -53,10 +54,11 @@ masterSignal : Signal MasterSignalType
 masterSignal = Time.timestamp (Signal.sampleOn (fps 50) Keyboard.arrows)
 
 view : Model -> Element
-view {player, monsters} = 
+view {player, monsters, state} = 
     let
-       forms = (drawBackground :: (moveForm player drawPlayer) :: (List.map drawObstacle earth)) 
+       forms = (drawBackground :: (moveForm player drawPlayer) :: (List.map drawObstacle earth))
                 ++ (List.map (\monster -> moveForm monster (drawMonster monster)) monsters)
+                ++ (drawGameOver state)
     in collage windowWidth windowHeight forms
 
 createPlayer : Float -> Float -> Float -> Float -> Player
@@ -71,6 +73,7 @@ createMonster x y deltaX deltaY =
 
 initialModel : Model
 initialModel = {
+    state = Splash,
     tick = 0,
     player = (createPlayer 0 0 0 0 ),
     monsters = [createMonster -4 -4 0 3
@@ -167,6 +170,16 @@ applyMonsterHit player monster =
         else 
             monster
 
+monsterHitsPlayer : Player -> Monster -> Bool
+monsterHitsPlayer player monster =
+    let 
+        mRect = monsterRectangle monster
+        pRect = playerRectangle player
+    in pRect.minY < mRect.maxY && pRect.maxY >= mRect.minY && pRect.maxX >= (mRect.minX + 2) && pRect.minX <= (mRect.maxX - 2) && not (monster.size == Dead)
+
+monstersHitPlayer : List Monster -> Player -> Bool
+monstersHitPlayer monsters player = List.foldl (||) False (List.map (monsterHitsPlayer player) monsters)
+
 playerHitsMonster : Player -> Monster -> Bool
 playerHitsMonster player monster = 
     let 
@@ -208,36 +221,45 @@ applyPlayerHitsMonster ({monsters, player} as model) =
             else player
     in {model | player = newPlayer, monsters = newMonsters}
 
+applyGameOver : Model -> Model
+applyGameOver ({monsters, player} as model) =
+    if monstersHitPlayer monsters player then {model | state = GameOver} else model
+
 updateModel : MasterSignalType -> Model -> Model
-updateModel (time, keyboard) oldModel = 
-    let 
-        currentTick = oldModel.tick + 1
-        mutators = [
-                    applyToMonsters applyGravity
-                   ,applyToMonsters applyMonsterBumps
-                   ,applyToMonsters applyMonsterMinimumVelocity
-                   ,applyToMonsters applyVelocity
-                   ,applyToPlayer applyFriction
-                   ,applyToPlayer applyGravity
-                   ,applyToPlayer (applyUserInput keyboard currentTick)
-                   ,applyToPlayer applyMaximumVelocity
-                   ,(\model -> applyToPlayer (applyBumps (playerObstacles model) playerRectangle (executePlayerBump currentTick)) model)
-                   ,applyToPlayer applyVelocity
-                   ,applyPlayerHitsMonster
-                   ]
-        
-        newModel : Model
-        newModel = List.foldl ( \mutator -> \model -> mutator model) oldModel mutators
+updateModel (time, keyboard) ({state} as oldModel) = 
+    case state of 
+        Splash -> if keyboard.x /= 0 || keyboard.y /= 0 then {oldModel | state = InGame} else oldModel
+        InGame -> 
+            let 
+                currentTick = oldModel.tick + 1
+                mutators = [
+                            applyToMonsters applyGravity
+                           ,applyToMonsters applyMonsterBumps
+                           ,applyToMonsters applyMonsterMinimumVelocity
+                           ,applyToMonsters applyVelocity
+                           ,applyToPlayer applyFriction
+                           ,applyToPlayer applyGravity
+                           ,applyToPlayer (applyUserInput keyboard currentTick)
+                           ,applyToPlayer applyMaximumVelocity
+                           ,(\model -> applyToPlayer (applyBumps (playerObstacles model) playerRectangle (executePlayerBump currentTick)) model)
+                           ,applyToPlayer applyVelocity
+                           ,applyPlayerHitsMonster
+                           ,applyGameOver
+                           ]
                 
-        
-        --debug
-        player = newModel.player
-        d1=Debug.watch "player.velocity " (player.velocity.x, player.velocity.y)
-        d2=Debug.watch "player.position " (player.position.x, player.position.y)
-        d5=Debug.watch "player.lastTickNotJumping " (player.lastTickNotJumping)
-        d3=Debug.watch "intersect" (List.map (\r->intersect r (playerRectangle player)) earth)
-    in
-        {newModel | tick = currentTick}
+                newModel : Model
+                newModel = List.foldl ( \mutator -> \model -> mutator model) oldModel mutators
+                        
+                
+                --debug
+                player = newModel.player
+                d1=Debug.watch "player.velocity " (player.velocity.x, player.velocity.y)
+                d2=Debug.watch "player.position " (player.position.x, player.position.y)
+                d5=Debug.watch "player.lastTickNotJumping " (player.lastTickNotJumping)
+                d3=Debug.watch "state" newModel.state
+            in
+                {newModel | tick = currentTick}
+        _ -> oldModel
 
 main : Signal Element
 main = Signal.map view (Signal.foldp updateModel initialModel masterSignal)
