@@ -14,9 +14,25 @@ earth : List Rectangle
 earth = [createTile -12 -10 12 -9
         ,createTile -13 -10 -12 10
         ,createTile 12 -10 13 10
-        ,createTile -8 -8 -4 -7
-        ,createTile -1 -5 12 -4
-        ,createTile -1 -4 0 -3]
+        
+        ,createTile 4 -6 12 -5
+        ,createTile 4 -5 5 -3
+        ,createTile 0 -7 2 -6
+        ,createTile -8 -7 -2 -4
+        ,createTile -8 -4 -7 -3
+        ,createTile -4 -1 -3 0
+        ,createTile -12 2 -5 3
+        ,createTile -7 5 -5 6
+        ,createTile 3 5 4 6
+        ,createTile 7 4 11 5
+        ,createTile 6 1 12 2]
+
+additionalMonsterBlockages : List Rectangle
+additionalMonsterBlockages = [ createTile -2 -4 -1 -3
+                              ,createTile -5 3 -4 4
+                              ,createTile 5 2 6 3
+                              ,createTile 6 5 7 6
+                              ,createTile 11 5 12 6]
 
 monsterRectangle : Monster -> Rectangle
 monsterRectangle {size,position} = createRectangle position.x position.y (position.x + monsterWidth) (position.y + (monsterHeight size))
@@ -48,8 +64,8 @@ createPlayer x y deltaX deltaY = {position = {x = x, y=y}, velocity = { x= delta
 
 createMonster : Float -> Float -> Float -> Float -> Monster
 createMonster x y deltaX deltaY = 
-    {position = {x = x, y=y}, 
-     velocity = { x= deltaX, y= deltaY}, 
+    {position = {x = (x * 40), y = ((y+2) * 40)}, 
+     velocity = {x = deltaX, y = deltaY}, 
      size = Medium,
      direction = R}
 
@@ -57,8 +73,12 @@ initialModel : Model
 initialModel = {
     tick = 0,
     player = (createPlayer 0 0 0 0 ),
-    monsters = [createMonster 50 50 0 3
-               ,createMonster 150 50 0 3]
+    monsters = [createMonster -4 -4 0 3
+               ,createMonster 4 -8 0 0
+               ,createMonster 8 -5 0 0
+               ,createMonster -8 2 0 0
+               ,createMonster 8 0 0 0
+               ,createMonster 8 3 0 0]
     }
 
 executePlayerBump : Int -> (Bump, Rectangle) -> Player -> Player
@@ -85,20 +105,21 @@ applyFriction : Player -> Player
 applyFriction old = 
     let
         x = old.velocity.x
-        deltaX = if x>=0 then max -x -0.5 else min -x 0.5
+        coefficient = if (Debug.watch "old.velocity.y " old.velocity.y) /= 0 then 0.1 else 0.48
+        deltaX = if x>=0 then max -x -coefficient else min -x coefficient
     in changeVelocity old {y=0, x=deltaX}
 
 applyToPlayer : (Player -> Player) -> Model -> Model
 applyToPlayer f ({player} as model) = {model | player = f player}
 
 applyGravity : Entity a -> Entity a
-applyGravity old = changeVelocity old {y=-0.6, x=0}
+applyGravity old = changeVelocity old {y=-0.63, x=0}
 
 applyUserInput : IntVector -> Int -> Player -> Player
 applyUserInput keyboard tick ({lastTickNotJumping, velocity} as player)  = 
     let 
         keyboardVector = toVector keyboard
-        x = keyboardVector.x * 1.5
+        x = keyboardVector.x * 1.3
         y = if keyboardVector.y <= 0 then keyboardVector.y
             else max 0 ((6 - 20 * ((toFloat tick) - (toFloat lastTickNotJumping)) / 30)^0.5)
     in changeVelocity player {x = x, y = y}
@@ -123,7 +144,7 @@ applyToMonsters f ({monsters} as model) = {model | monsters = List.map f monster
 applyMonsterBumps : Monster -> Monster
 applyMonsterBumps monster = 
     let
-        bumps = getBumps [] ((monsterRectangle monster), monster.velocity)
+        bumps = getBumps additionalMonsterBlockages ((monsterRectangle monster), monster.velocity)
     in List.foldl (executeBump (monsterHeight monster.size) monsterWidth) monster bumps
 
 applyMonsterMinimumVelocity : Monster -> Monster
@@ -171,9 +192,6 @@ monsterSpeed size = case size of
 playerObstacles : Model -> List Rectangle
 playerObstacles {monsters} = earth ++ (List.map monsterRectangle (List.filter (\monster -> monster.size /= Dead) monsters))
 
-monsterObstacles : Model -> List Rectangle
-monsterObstacles model = earth
-
 applyBumps: List Rectangle -> (Entity a -> Rectangle) -> ((Bump, Rectangle) -> Entity a -> Entity a) -> Entity a -> Entity a
 applyBumps rectangles getEntityRectangle executeBump ({velocity} as entity) = 
     let
@@ -186,7 +204,7 @@ applyPlayerHitsMonster ({monsters, player} as model) =
         newMonsters = List.map (applyMonsterHit player) monsters
         newPlayer = 
             if playerHitsMonsters monsters player then
-                {player | velocity = {x=player.velocity.x, y=2}}
+                {player | velocity = {x=player.velocity.x, y=3}}
             else player
     in {model | player = newPlayer, monsters = newMonsters}
 
@@ -199,8 +217,8 @@ updateModel (time, keyboard) oldModel =
                    ,applyToMonsters applyMonsterBumps
                    ,applyToMonsters applyMonsterMinimumVelocity
                    ,applyToMonsters applyVelocity
-                   ,applyToPlayer applyGravity
                    ,applyToPlayer applyFriction
+                   ,applyToPlayer applyGravity
                    ,applyToPlayer (applyUserInput keyboard currentTick)
                    ,applyToPlayer applyMaximumVelocity
                    ,(\model -> applyToPlayer (applyBumps (playerObstacles model) playerRectangle (executePlayerBump currentTick)) model)
