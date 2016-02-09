@@ -51,7 +51,7 @@ moveForm : Entity a -> Form -> Form
 moveForm {position} form = move (position.x, position.y) form
 
 masterSignal : Signal MasterSignalType
-masterSignal = Time.timestamp (Signal.sampleOn (fps 50) Keyboard.arrows)
+masterSignal = Time.timestamp (Signal.sampleOn (fps 35) Keyboard.arrows)
 
 view : Model -> Element
 view {player, monsters, state} = 
